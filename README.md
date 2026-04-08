@@ -1,114 +1,106 @@
-# pikvm-key-cli
+# PiKVM Smash Deck
 
-**A feature-packed open-source web dashboard that transforms your PiKVM into a professional-grade KVM-over-IP platform.**
+**A software upgrade for PiKVM v3 — bringing it closer to v4 without buying new hardware.**
 
-The stock PiKVM web UI covers the basics. This replaces it with a purpose-built dashboard that adds screen recording, WebRTC streaming, OCR text extraction, macro templating, one-click firmware upgrades, remote diagnostics, and full HDMI resolution control — all from a single Go binary with no external runtime dependencies.
+If you're running a PiKVM v3, you've probably hit the wall: your source machine outputs 4K and the capture chip sees nothing. Black screen. Unsupported signal. Or it locks on but the image is blurry, badly scaled, or drops out. PiKVM v4 handles this internally — it accepts higher-bandwidth signals and downscales to 1080p on the hardware side. v3 can't do that on its own.
+
+PiKVM Smash Deck fixes that in software. It injects a custom EDID over SSH that tells your GPU to output 1080p instead of 4K — so the v3 capture chip gets a signal it can actually lock on to. That's one feature. It also replaces the stock web UI entirely with a purpose-built dashboard that adds everything the v4 UI still doesn't have: WebRTC streaming, screen recording, OCR, text macros, remote diagnostics, and more.
 
 ---
 
-## What's New vs. Stock PiKVM
+## The v3 → v4 Gap, Closed in Software
 
-| Capability | Stock PiKVM UI | pikvm-key-cli |
-|---|---|---|
-| Screen recording | None | H.264/H.265 video + JPEG frames, scheduled |
-| WebRTC streaming | None | go2rtc WHEP — ~30ms latency |
-| OCR text extraction | None | PaddleOCR (AI) + Tesseract fallback |
-| Macro / text templates | None | `{{token}}` substitution + human-mode typing |
-| Human typing simulation | None | Typos, backspaces, natural pace |
-| 4K → 1080p EDID fix | None | One-click `kvmd-edidconf` injection |
-| Firmware upgrade UI | None | SSE streaming terminal in browser |
-| Remote diagnostics | None | CPU temp, services, disk, RAM, network |
-| H.264 bitrate tuning | YAML file edit | Web UI slider, persisted to device |
-| Stream latency (MJPEG) | ~500ms | ~30ms via WebRTC (go2rtc) |
-| Frame skip on idle | None | Similarity-based, saves 50%+ storage |
-| Playback / timeline | None | Per-day selector, frame slider, 1–60x speed |
-| Portable binary | No | Single `go build`, zero runtime deps |
+| Problem on PiKVM v3 | What Smash Deck Does |
+|---|---|
+| 4K source → black screen / unsupported signal | Injects 1080p EDID via SSH — GPU downgrades output before it reaches the capture chip |
+| Blurry or dropped signal at high resolutions | Forces a stable 1080p lock through `kvmd-edidconf` presets (tries v4→v3→v2→v1 automatically) |
+| ~500ms MJPEG latency | go2rtc WebRTC (WHEP) — H.264 at ~30ms latency, same as v4's streaming |
+| No screen recording | H.264/H.265 MP4 segments + JPEG frames, scheduled, with playback timeline |
+| No OCR | PaddleOCR (AI) + Tesseract fallback — drag a selection box, get text |
+| No text automation | `{{token}}` macro templates + human-mode typing (typos, backspaces, natural pace) |
+| No remote diagnostics | CPU temp (°C/°F), disk, RAM, network, 7 systemd service statuses over SSH |
+| Firmware upgrade is manual SSH | One-click `pikvm-update` with live streaming terminal output in browser |
+| Bitrate tuning requires YAML editing | Web UI slider — writes to `/etc/kvmd/override.yaml` and restarts kvmd |
 
 ---
 
 ## Features
 
-### Live Video — Four Capture Modes
+### EDID Fix — The Core v3 Problem
 
-- **WebRTC (go2rtc)** — H.264 at ~30ms latency via WHEP. Installed as a systemd service on the PiKVM over SSH in one click.
-- **SSH Tunnel** — Native uStreamer MJPEG via SSH port-forward. Full framerate, no polling overhead.
-- **MJPEG Poll** — Three-tier HTTP fallback (kvmd snapshot → SHM → V4L2).
-- **Screenshot** — On-demand or 3-second auto-refresh.
+PiKVM v3's capture chip tops out at 1080p. If your PC or console outputs 4K (or any signal above the chip's bandwidth), the result is a black screen or an "unsupported signal" message in the stock UI. PiKVM v4 avoids this by downscaling the signal in hardware before it reaches the capture chip.
 
-All modes include an FPS counter and one-click reconnect.
+Smash Deck solves the same problem in software:
+
+1. **Check Input** — reads the currently negotiated source resolution via `v4l2-ctl` over SSH
+2. **Force 1080p** — runs `kvmd-edidconf` to inject a 1080p EDID, tries hardware presets v4→v3→v2→v1 automatically, restarts kvmd so the fix persists across reboots, then triggers an HPD (hot-plug detect) pulse to force the GPU to renegotiate
+3. **Restore Default** — removes the custom EDID if you need to revert
+
+No manual SSH, no hex editing. The output log shows every step.
+
+### WebRTC Streaming — v4-Level Latency on v3
+
+The stock PiKVM v3 UI streams MJPEG over HTTP — typically 400–600ms end-to-end. v4 addresses this with better hardware but the latency is still not great out of the box.
+
+Smash Deck installs **go2rtc** as a systemd service on the PiKVM over SSH (one click), then streams H.264 video via WHEP (WebRTC). End-to-end latency drops to ~30ms — the same class as v4's best-case streaming.
+
+The install:
+1. Detects architecture (arm64 / arm / amd64)
+2. Downloads the latest go2rtc binary from GitHub
+3. Creates a socat bridge from the uStreamer Unix socket to TCP 8082
+4. Writes a go2rtc config for H.264 transcoding via ffmpeg
+5. Enables and starts the service with systemd
+
+Idempotent — re-running it only reinstalls if a newer version is available.
+
+### Four Capture Modes
+
+All modes are available on both the Dashboard and Recording tabs, each with a description shown inline:
+
+- **Auto** — SSH tunnel first, MJPEG poll fallback. Best default.
+- **SSH Tunnel** — direct SSH port-forward to uStreamer's internal HTTP server. Full native framerate, ~50–100ms latency. Requires SSH credentials.
+- **MJPEG Poll** — three-tier HTTP fallback (kvmd snapshot API → SHM device → V4L2). No SSH needed, ~3 fps.
+- **Screenshot** — on-demand JPEG, or auto-refresh every 3 seconds.
+- **WebRTC** — H.264 via go2rtc WHEP. ~30ms. Requires go2rtc installed (one click in Settings).
 
 ### Screen Recording
 
 Two modes, fully scheduled:
 
-- **Video** — H.264 or H.265 MP4 segments (one per hour), configurable CRF (18–36) and encoding preset. Fragmented MP4 makes segments playable mid-recording.
-- **JPEG** — Individual frames at configurable intervals (2–60s). Browse and step through frames in the browser.
+- **Video** — H.264 or H.265 MP4 segments (one per hour), configurable CRF and encoding preset. Fragmented MP4 makes segments playable mid-recording.
+- **JPEG** — individual frames at configurable intervals (2–60s).
 
-Schedule by day of week and hour range. Automatic cleanup by age (7–90 days) and max storage (500 MB–10 GB). Smart **frame-skip** detects unchanged screens and saves 50%+ storage when the target is idle.
+Schedule by day of week and hour range. Automatic cleanup by age (7–90 days) and max storage (500 MB–10 GB). Smart **frame-skip** detects unchanged screens and saves 50%+ storage when the target machine is idle.
 
-Full playback timeline in the browser: day picker, frame slider, 1x / 10x / 30x / 60x speed, keyboard shortcuts (space, arrow keys), and fullscreen.
+Full playback timeline in the browser: day picker, frame slider, 1x / 10x / 30x / 60x speed, keyboard shortcuts.
 
 ### OCR — Read Text Off the Screen
 
-Drag a selection rectangle over the live preview. The server:
-1. Captures a fresh screenshot
-2. Crops and upscales 4× with contrast enhancement
-3. Runs **PaddleOCR** (deep-learning, handles compression artifacts) or **Tesseract** as fallback
-4. Returns extracted text in a copyable panel
-
-Works in both dashboard live view and recording preview. One-click copy.
+Drag a selection box over the live preview. The server captures a fresh screenshot, crops and upscales 4× with contrast enhancement, then runs PaddleOCR (deep-learning) or Tesseract as fallback. Extracted text appears in a copyable panel. Works in both Dashboard and Recording tabs, including fullscreen.
 
 ### Text Macro — Type Anything, Anywhere
 
-Paste a block of text into the macro panel. Define `{{token}} = value` substitution pairs — the UI shows a live preview of the resolved text before sending.
+Paste text into the macro panel. Define `{{token}} = value` substitution pairs — live preview shows the resolved text before sending.
 
-**Human mode** makes it look like a real person typed it:
-- 7% per-character chance of an adjacent QWERTY key typo → auto-corrected with Backspace
-- 2% double-press chance → auto-corrected
-- 80ms per-keystroke pace (configurable via PiKVM's `delay` API param)
-- Result: realistic rhythm, noise, and hesitation patterns
-
-Supports 8 keymaps: `en-us`, `de`, `ru`, `fr`, `es`, `ja`, `pt`, plus custom.
-
-### HDMI Resolution — Fix 4K Sources
-
-PiKVM's capture chip supports up to 1080p. If your source outputs 4K, the signal won't lock. The EDID panel:
-
-- **Check Input** — shows the currently negotiated source resolution (reads `v4l2-ctl` timings over SSH)
-- **Force 1080p** — injects a 1080p EDID via `kvmd-edidconf` (tries hardware presets v4→v3→v2→v1 automatically), restarts kvmd to persist across reboots, triggers HPD renegotiation
-- **Restore Default** — resets EDID back to device default
-
-No manual SSH required. Output log shows every step.
-
-### go2rtc WebRTC — One-Click Install
-
-Installs **go2rtc** as a systemd service on the PiKVM over SSH:
-
-1. Detects architecture (arm64 / arm / amd64)
-2. Downloads latest go2rtc binary from GitHub
-3. Creates a socat bridge: uStreamer Unix socket → TCP 8082
-4. Writes go2rtc config for H.264 transcoding via ffmpeg
-5. Enables + starts the service
-
-Health monitor (Server-Sent Events) shows go2rtc up/down events in real time. Auto-restarts on failure via the watcher.
+**Human mode** makes it look like a real person typed it: ~7% adjacent-key typo rate (auto-corrected with Backspace), ~2% double-press rate, 80ms per-keystroke pace. Realistic rhythm that bypasses basic bot detection.
 
 ### Remote Diagnostics
 
-One-click over SSH:
+Over SSH, one click:
 
 - KVMD, kernel, and streamer versions
-- Uptime, CPU temperature (color-coded: green < 55°C, yellow 55–70°C, red > 70°C)
+- Uptime, CPU temperature (°C / °F, color-coded: green < 55°C, yellow 55–70°C, red > 70°C)
 - Disk and RAM usage
-- Network interfaces (eth0, wlan0) with IP addresses and WiFi SSID
+- Network interfaces with IP addresses and WiFi SSID
 - Status of 7 systemd services: `kvmd`, `kvmd-nginx`, `kvmd-oled`, `kvmd-vnc`, `kvmd-janus`, `go2rtc`, `ustreamer-bridge`
 
-### Firmware Upgrade
+### Live Status Header
 
-Runs `pikvm-update --no-reboot` via SSH. Live streaming output to a retro-terminal-style panel in the browser (Server-Sent Events). Color-coded by line type: errors red, warnings yellow, success green. Update check reports pending package versions before you commit to running the upgrade.
+Always visible at the top:
 
-### H.264 Bitrate Tuning
-
-Slider from 1,000 to 20,000 kbps. Default PiKVM is 5,000; recommended for quality is 10,000. Writes to `/etc/kvmd/override.yaml` on the device and restarts kvmd. Reference markers in the UI show default, recommended, and max.
+- **Power ON/OFF** — derived from ATX LED or HDMI signal presence (ATX LED isn't wired on all v3 builds)
+- **HDMI** — shows resolution and captured fps (e.g. `1080p · 50fps`) when signal is present
+- **USB HID** — SSH check of the Linux UDC gadget state (`/sys/class/udc/*/state`) — green when `configured` (host has enumerated the USB keyboard+mouse), red when not connected
 
 ---
 
@@ -122,26 +114,89 @@ go build -o pikvm ./cmd/pikvm/
 cp .env.example .env
 # Edit .env — set PIKVM_HOST, PIKVM_USER, PIKVM_PASS, PIKVM_SSH_PASS
 
-# Start the web dashboard
+# Start
 ./pikvm server          # http://localhost:8095
 ./pikvm server -P 9000  # custom port
 ```
+
+## Docker — Quickest Way to Run
+
+A pre-built image is published to the GitHub Container Registry. No Go toolchain or Node.js required.
+
+**Option A — one-liner** (no config file needed):
+
+```bash
+docker run -d --name pikvm-smash-deck \
+  -p 8095:8095 \
+  -e PIKVM_HOST=192.168.1.x \
+  -e PIKVM_USER=admin \
+  -e PIKVM_PASS=yourpassword \
+  -e PIKVM_SSH_USER=root \
+  -e PIKVM_SSH_PASS=yourpassword \
+  ghcr.io/niski84/picavium-smash-deck:latest
+```
+
+Then open `http://localhost:8095`.
+
+**Option B — docker compose** (recommended, keeps credentials in a `.env` file):
+
+```bash
+# 1. Grab the compose file
+curl -O https://raw.githubusercontent.com/niski84/picavium-smash-deck/main/docker-compose.yml
+
+# 2. Create your config
+cp .env.example .env   # or create .env manually — see Environment Variables below
+nano .env              # set PIKVM_HOST, PIKVM_PASS, PIKVM_SSH_PASS at minimum
+
+# 3. Start
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+**Updating to the latest image:**
+
+```bash
+docker compose pull && docker compose up -d
+# or for the one-liner:
+docker pull ghcr.io/niski84/picavium-smash-deck:latest
+```
+
+**Build locally instead** (if you want to modify the code):
+
+```bash
+git clone https://github.com/niski84/picavium-smash-deck.git
+cd picavium-smash-deck
+docker build --target slim -t picavium-smash-deck .
+docker run -p 8095:8095 --env-file .env picavium-smash-deck
+```
+
+**Full image with PaddleOCR AI engine** (~2 GB, better OCR accuracy):
+
+```bash
+docker build --target full -t picavium-smash-deck:full .
+docker run -p 8095:8095 --env-file .env picavium-smash-deck:full
+```
+
+The default (`slim`) image includes Tesseract OCR, which works well for most screen text. PaddleOCR handles compression artifacts and unusual fonts better but adds significant image size.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `PIKVM_HOST` | — | Hostname or IP (no `https://` needed) |
-| `PIKVM_USER` | `admin` | PiKVM web username |
-| `PIKVM_PASS` | `admin` | PiKVM web password |
+| `PIKVM_HOST` | — | Hostname or IP (https:// added automatically) |
+| `PIKVM_USER` | `admin` | PiKVM web UI username |
+| `PIKVM_PASS` | `admin` | PiKVM web UI password (append TOTP if 2FA enabled) |
 | `PIKVM_SSH_USER` | `root` | SSH username |
 | `PIKVM_SSH_PASS` | — | SSH password (key auth tried first) |
 | `PIKVM_SSH_KEY` | — | Path to SSH private key |
-| `PORT` | `8095` | Web server port |
+| `PORT` | `8095` | Web server listen port |
 
-## CLI Usage
-
-The binary also ships a CLI for scripting and automation:
+## CLI
 
 ```bash
 pikvm type "Hello World"
@@ -154,28 +209,14 @@ pikvm msd connect / disconnect
 pikvm gpio pulse __v3_usb_breaker__
 ```
 
-Key names follow the [Web KeyboardEvent.code](https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values) spec (`KeyA`, `ControlLeft`, `F1`, etc.).
+Key names follow the [Web KeyboardEvent.code](https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values) spec.
 
 ## Notes
 
-- PiKVM uses a self-signed cert — TLS verification is skipped automatically
-- 2FA: append your TOTP code directly to the password, no separator
-- SSH access is required for diagnostics, go2rtc install, EDID changes, upgrade, and bitrate tuning
-- Key auth is attempted before password fallback for SSH
-
-## deck-hub Integration
-
-```json
-{
-  "id": "pikvm",
-  "display_name": "PiKVM Control",
-  "command": ["$GOPROJECTS/pikvm-key-cli/pikvm", "server"],
-  "cwd": "$GOPROJECTS/pikvm-key-cli",
-  "env": { "PORT": "8095" },
-  "upstream": "http://127.0.0.1:8095",
-  "health_path": "/api/health"
-}
-```
+- PiKVM uses a self-signed TLS cert — verification is skipped automatically
+- SSH access is required for EDID fix, go2rtc install, diagnostics, upgrade, and bitrate tuning
+- SSH key auth is attempted before password fallback
+- 2FA: append your TOTP code directly to the password, no separator needed
 
 ## Stack
 
