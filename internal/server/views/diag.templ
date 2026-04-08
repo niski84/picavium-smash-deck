@@ -1,0 +1,90 @@
+package views
+
+templ DiagTab() {
+	<div x-show="activeTab==='diag'" x-cloak class="space-y-4">
+		<section class="card bg-base-200 shadow-sm">
+			<div class="card-body p-4">
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="card-title text-sm uppercase tracking-wide opacity-60">System Diagnostics</h2>
+					<button class="btn btn-ghost btn-sm" @click="loadDiag()" :disabled="diagLoading">
+						<span x-show="diagLoading" class="loading loading-spinner loading-xs"></span>
+						<span x-show="!diagLoading">Refresh</span>
+					</button>
+				</div>
+
+				<div x-show="diagError" x-cloak class="alert alert-error text-sm mb-3" x-text="diagError"></div>
+
+				<div x-show="diag" x-cloak class="space-y-5">
+					<!-- Version + Hardware -->
+					<div class="stats stats-vertical sm:stats-horizontal shadow w-full">
+						<div class="stat py-3 px-4">
+							<div class="stat-title text-xs">KVMD</div>
+							<div class="stat-value text-lg font-mono" x-text="diag?.kvmd_version || '—'"></div>
+						</div>
+						<div class="stat py-3 px-4">
+							<div class="stat-title text-xs">Kernel</div>
+							<div class="stat-value text-sm font-mono opacity-70" x-text="diag?.kernel || '—'"></div>
+						</div>
+						<div class="stat py-3 px-4">
+							<div class="stat-title text-xs">CPU Temp</div>
+							<div class="stat-value text-lg font-mono"
+								:class="parseCelsius(diag?.cpu_temp) > 70 ? 'text-error' : parseCelsius(diag?.cpu_temp) > 55 ? 'text-warning' : 'text-success'"
+								x-text="diag?.cpu_temp ? diag.cpu_temp + ' / ' + toFahrenheit(parseCelsius(diag.cpu_temp)) + '°F' : '—'"></div>
+						</div>
+						<div class="stat py-3 px-4">
+							<div class="stat-title text-xs">Uptime</div>
+							<div class="stat-value text-sm font-mono opacity-70" x-text="diag?.uptime || '—'"></div>
+						</div>
+					</div>
+
+					<!-- Disk + Memory -->
+					<div class="grid grid-cols-2 gap-4">
+						<div class="form-control">
+							<label class="label"><span class="label-text text-xs opacity-60">Disk (root)</span></label>
+							<div class="bg-base-300 rounded-lg px-3 py-2 text-sm font-mono" x-text="diag?.disk_root || '—'"></div>
+						</div>
+						<div class="form-control">
+							<label class="label"><span class="label-text text-xs opacity-60">Memory</span></label>
+							<div class="bg-base-300 rounded-lg px-3 py-2 text-sm font-mono" x-text="diag?.memory || '—'"></div>
+						</div>
+					</div>
+
+					<!-- Network -->
+					<div>
+						<label class="label"><span class="label-text text-xs opacity-60">Network</span></label>
+						<div class="grid grid-cols-2 gap-3">
+							<div class="bg-base-300 rounded-lg px-3 py-2 flex items-center gap-2">
+								<span class="badge badge-ghost badge-xs font-mono">eth0</span>
+								<span class="text-xs font-mono" x-text="diag?.network?.eth0 || 'no addr'"></span>
+							</div>
+							<div class="bg-base-300 rounded-lg px-3 py-2 flex items-center gap-2">
+								<span class="badge badge-ghost badge-xs font-mono">wlan0</span>
+								<span class="text-xs font-mono" x-text="diag?.network?.wlan0 || 'no addr'"></span>
+								<span x-show="diag?.wifi_ssid && diag.wifi_ssid !== 'n/a'"
+									class="badge badge-info badge-xs" x-text="diag?.wifi_ssid"></span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Services -->
+					<div>
+						<label class="label"><span class="label-text text-xs opacity-60">Services</span></label>
+						<div class="flex flex-wrap gap-2">
+							<template x-for="[svc, status] in Object.entries(diag?.services || {})" :key="svc">
+								<div class="badge gap-1" :class="status === 'active' ? 'badge-success' : 'badge-warning'">
+									<span class="w-1.5 h-1.5 rounded-full inline-block"
+										:class="status === 'active' ? 'bg-success-content' : 'bg-warning-content'"></span>
+									<span x-text="svc"></span>
+								</div>
+							</template>
+						</div>
+					</div>
+				</div>
+
+				<p x-show="!diag && !diagLoading && !diagError" class="text-sm opacity-40">
+					Click Refresh to run diagnostics over SSH.
+				</p>
+			</div>
+		</section>
+	</div>
+}

@@ -1,0 +1,125 @@
+package views
+
+templ UpgradeTab() {
+	<div x-show="activeTab==='upgrade'" x-cloak class="space-y-4">
+
+		<!-- Version card -->
+		<section class="card bg-base-200 shadow-sm">
+			<div class="card-body p-4">
+				<h2 class="card-title text-sm uppercase tracking-wide opacity-60">Firmware Version</h2>
+				<div x-show="upgradeVersion" x-cloak class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+					<div>
+						<div class="text-xs opacity-50 mb-1">KVMD</div>
+						<div class="text-lg font-mono font-semibold" x-text="upgradeVersion?.kvmd || '—'"></div>
+					</div>
+					<div>
+						<div class="text-xs opacity-50 mb-1">Streamer</div>
+						<div class="text-lg font-mono font-semibold" x-text="upgradeVersion?.streamer || '—'"></div>
+					</div>
+					<div>
+						<div class="text-xs opacity-50 mb-1">Kernel</div>
+						<div class="text-sm font-mono opacity-60 mt-1" x-text="upgradeVersion?.kernel || '—'"></div>
+					</div>
+					<div>
+						<div class="text-xs opacity-50 mb-1">Platform</div>
+						<div class="text-sm font-mono opacity-60 mt-1" x-text="upgradeVersion?.platform || '—'"></div>
+					</div>
+				</div>
+				<div x-show="!upgradeVersion" class="text-sm opacity-40 mb-4">Click Refresh to load version info.</div>
+				<button class="btn btn-secondary btn-sm" @click="loadVersion()">Refresh Version</button>
+			</div>
+		</section>
+
+		<!-- Update check card -->
+		<section class="card bg-base-200 shadow-sm">
+			<div class="card-body p-4">
+				<div class="flex items-center justify-between mb-3">
+					<h2 class="card-title text-sm uppercase tracking-wide opacity-60">Available Updates</h2>
+					<button class="btn btn-secondary btn-sm" @click="checkUpdates()" :disabled="upgradeChecking">
+						<span x-show="upgradeChecking">Checking…</span>
+						<span x-show="!upgradeChecking">Check for Updates</span>
+					</button>
+				</div>
+				<div x-show="upgradeCheckResult !== null" x-cloak>
+					<div x-show="upgradeCheckResult?.error" class="alert alert-error text-sm"
+						x-text="'Error: ' + upgradeCheckResult?.error"></div>
+					<div x-show="!upgradeCheckResult?.error">
+						<div x-show="upgradeCheckResult?.pending === 0" class="badge badge-success gap-1 px-3 py-3">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+							System is up to date
+						</div>
+						<div x-show="upgradeCheckResult?.pending > 0">
+							<div class="badge badge-warning gap-1 px-3 py-3 mb-3">
+								<span x-text="upgradeCheckResult?.pending"></span> package(s) available
+							</div>
+							<div x-show="upgradeCheckResult?.packages?.length > 0"
+								class="bg-base-300 rounded-lg p-3 max-h-32 overflow-auto">
+								<template x-for="pkg in (upgradeCheckResult?.packages || [])" :key="pkg">
+									<div class="text-xs font-mono opacity-60" x-text="pkg"></div>
+								</template>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div x-show="upgradeCheckResult === null" class="text-sm opacity-40">
+					Click "Check for Updates" to query the package manager.
+				</div>
+			</div>
+		</section>
+
+		<!-- Run upgrade card -->
+		<section class="card bg-base-200 shadow-sm">
+			<div class="card-body p-4">
+				<div class="flex items-center justify-between mb-3">
+					<h2 class="card-title text-sm uppercase tracking-wide opacity-60">Run Upgrade</h2>
+					<div class="flex gap-2">
+						<button class="btn btn-secondary btn-sm" @click="upgradeClear()" x-show="upgradeLog.length > 0 && !upgradeRunning">Clear</button>
+						<button class="btn btn-success btn-sm" @click="runUpgrade()" :disabled="upgradeRunning">
+							<span x-show="upgradeRunning" class="flex items-center gap-1.5">
+								<span class="loading loading-dots loading-xs"></span>Upgrading…
+							</span>
+							<span x-show="!upgradeRunning">Run pikvm-update</span>
+						</button>
+					</div>
+				</div>
+				<p class="text-xs opacity-50 mb-3">
+					Runs <code class="bg-base-300 px-1 rounded">pikvm-update --no-reboot</code> via SSH.
+					Output streams live below. Upgrade continues even if you navigate away.
+				</p>
+
+				<!-- Matrix terminal -->
+				<div class="relative rounded-lg overflow-hidden" style="background:#050f05; border:1px solid #1a3a1a;">
+					<!-- scanline overlay -->
+					<div class="absolute inset-0 pointer-events-none" style="background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px); z-index:1;"></div>
+
+					<!-- header bar -->
+					<div class="flex items-center gap-2 px-3 py-1.5" style="background:#0a1a0a; border-bottom:1px solid #1a3a1a;">
+						<div class="flex gap-1.5">
+							<div class="w-2.5 h-2.5 rounded-full" style="background:#1a3a1a;"></div>
+							<div class="w-2.5 h-2.5 rounded-full" style="background:#1a3a1a;"></div>
+							<div class="w-2.5 h-2.5 rounded-full"
+								:style="upgradeRunning ? 'background:#00ff41;box-shadow:0 0 6px #00ff41' : 'background:#1a3a1a'"></div>
+						</div>
+						<span class="text-xs font-mono ml-1" style="color:#3a6a3a;">root@pikvm — pikvm-update</span>
+					</div>
+
+					<!-- log output -->
+					<div class="p-3 font-mono text-xs leading-5 overflow-auto" style="min-height:120px; max-height:380px; color:#00cc33;"
+						x-ref="upgradeLogBox">
+						<template x-for="(line, i) in upgradeLog" :key="i">
+							<div :style="lineStyle(line)" x-text="line || ' '"></div>
+						</template>
+						<div x-show="upgradeRunning" class="flex items-center gap-1 mt-1" style="color:#00ff41;">
+							<span class="animate-pulse">█</span>
+						</div>
+						<div x-show="upgradeLog.length === 0 && !upgradeRunning"
+							style="color:#1a5a1a;">
+							-- awaiting upgrade command --
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+	</div>
+}

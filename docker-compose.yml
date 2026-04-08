@@ -1,0 +1,20 @@
+services:
+  pikvm-smash-deck:
+    image: ghcr.io/niski84/picavium-smash-deck:latest
+    # build: .    # uncomment to build locally instead
+    ports:
+      - "${PORT:-8095}:8095"
+    environment:
+      - PORT=8095
+      - PIKVM_HOST=${PIKVM_HOST}
+      - PIKVM_USER=${PIKVM_USER:-admin}
+      - PIKVM_PASS=${PIKVM_PASS:-admin}
+      - PIKVM_SSH_USER=${PIKVM_SSH_USER:-root}
+      - PIKVM_SSH_PASS=${PIKVM_SSH_PASS:-}
+      - PIKVM_SSH_KEY=${PIKVM_SSH_KEY:-}
+    volumes:
+      # Persist recording data outside the container
+      - ./data:/app/data
+      # Mount SSH key if using key auth
+      # - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+    restart: unless-stopped

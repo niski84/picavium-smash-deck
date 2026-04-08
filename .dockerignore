@@ -1,0 +1,10 @@
+.env
+.env.bak
+data/
+node_modules/
+pikvm
+pikvm-server.log
+pikvm-server.pid
+*.log
+*.pid
+.git/

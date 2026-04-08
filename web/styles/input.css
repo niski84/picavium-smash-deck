@@ -1,0 +1,40 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Class-based dark mode: `dark` on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Scan Templ + Go source for class names */
+@source "../../internal/server/views/**/*.templ";
+@source "../../internal/server/**/*.go";
+@source "../pikvm/static/app.js";
+
+@theme {
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Theme color-scheme hint */
+html { color-scheme: light dark; }
+html.dark { color-scheme: dark; }
+html:not(.dark) { color-scheme: light; }
+
+/* HTMX indicators */
+.htmx-indicator { display: none !important; }
+.htmx-request .htmx-indicator { display: flex !important; }
+.htmx-request.htmx-indicator { display: flex !important; }
+
+/* Arcade button press */
+.btn {
+  transform: translateY(0);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(3px);
+}
+
+/* Sharp preview image rendering */
+.preview-img {
+  image-rendering: -webkit-optimize-contrast;
+  -webkit-user-drag: none;
+}
