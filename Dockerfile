@@ -2,7 +2,7 @@
 FROM node:20-alpine AS css
 WORKDIR /build
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 COPY web/styles/ ./web/styles/
 COPY web/pikvm/static/ ./web/pikvm/static/
 RUN npx @tailwindcss/cli -i ./web/styles/input.css -o ./web/pikvm/static/app.css --minify
@@ -45,4 +45,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip \
         libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --no-cache-dir paddlepaddle paddleocr
+RUN pip3 install --no-cache-dir --break-system-packages paddlepaddle paddleocr
